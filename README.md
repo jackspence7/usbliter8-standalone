@@ -59,9 +59,14 @@ color-coding, only breathing vs. blink-rate vs. solid vs. off:
 | Fast blink continues, then... | (automatic) reboot command sent | Keep holding both buttons |
 | Slow blink | Reboot triggered | Release **Side**, keep holding **Volume Down** |
 | Back to slow breathing, briefly | Phone found in DFU, settling | Wait (about a second) |
-| Fast blink again | Running the exploit, then sending the boot image (this happens back to back, usually under a couple seconds total) | Wait |
+| Fast blink again | Running the exploit (well under a second), then sending the boot image | Wait |
 | Solid on | Boot image sent - phone should boot | Done |
 | Off for a few seconds, then the box restarts itself | Something failed | It retries automatically; redo the DFU hold if asked again |
+
+The exploit itself is quick, but sending the ~2MB boot image over DFU in small
+chunks is not - expect the "sending the boot image" part of that fast blink to
+run for **a minute or two** before the LED goes solid. That's normal, not a
+hang.
 
 Note the "hold the buttons" fast blink and the "running/sending" fast blink
 look the same - the sequence makes it unambiguous (the button-hold blink only

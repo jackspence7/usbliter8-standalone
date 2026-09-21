@@ -152,9 +152,11 @@ From here on, no computer is involved:
      anything.
 4. Once the phone is confirmed in DFU, the LED goes back to a brief breathing
    pause (~1s, letting the phone settle), then blinks fast again while it
-   runs the exploit and sends the boot image back to back (usually well under
-   a couple seconds total), then turns **solid on** once the boot image is
-   fully sent.
+   runs the exploit (well under a second) and then sends the boot image.
+   Sending the boot image is the slow part - it's a couple of megabytes going
+   over DFU in small chunks, so expect **a minute or two** of fast blinking
+   before the LED turns **solid on**. That's normal, not a hang - just wait
+   it out.
 5. The phone boots.
 
 The LED is single-color (no color-coding, just the Pico's own onboard LED) -
