@@ -1,0 +1,212 @@
+--- a/main.c
++++ b/main.c
+@@ -17,35 +17,149 @@
+ 
+ #if WITH_AUTO_MODE
+ 
+-#define WITH_AUTO_REBOOT            (0)
+-#define FAILURE_REBOOT_DELAY_SEC    (3)
+-#define SUCCESS_REBOOT_DELAY_SEC    (5)
++#include "autoboot.h"
+ 
++#define FAILURE_REBOOT_DELAY_SEC    (5)
++
+ #define CONNECTION_FAIL_SLEEP_MS    (500)
++#define NOT_DFU_POLL_MS             (1000)
+ 
++// time to let a phone that just entered DFU settle before the exploit
++#define DFU_SETTLE_MS               (1500)
++
++#define APPLE_PID_DFU               (0x1227)
++#define APPLE_PID_RECOVERY          (0x1281)
++
++/*
++ * Timings copied from surrealra1n.sh's dfu_helper_a11 (used for every
++ * Face ID / no-Home-button device, including the XR): hold Volume Down +
++ * Side, ~2s later send the "reboot" command, keep holding both another
++ * ~2s, then release Side and hold Volume Down alone for ~8s more.
++ */
++#define RECOVERY_HOLD_BOTH_MS       (2000)
++#define RECOVERY_HOLD_AFTER_MS      (2000)
++#define RECOVERY_HOLD_VOLDOWN_MS    (8000)
++
++/*
++ * On failure the LED stays off for a few seconds, then the Pico
++ * reboots and starts over, so the box never needs a computer or
++ * a replug. If the phone is still in DFU it gets retried; if not,
++ * redo the DFU button sequence.
++ */
+ __attribute__((noreturn))
+ void fatal_failure(void) {
+     led_set_state(LED_STATE_ERROR);
+ 
+-#if WITH_AUTO_REBOOT
+     printf("\nfatal failure, rebooting in %d seconds\n", FAILURE_REBOOT_DELAY_SEC);
+ 
+     sleep_ms(FAILURE_REBOOT_DELAY_SEC * 1000);
+ 
+     watchdog_reboot(0, SRAM_END, 1);
+     while (1) {}
++}
+ 
+-#else
+-    printf("\nfatal failure, spinning forever\n");
+-
++__attribute__((noreturn))
++static void spin_forever(void) {
+     while (1) {
+         sleep_ms(100);
+     }
+-#endif
+ }
+ 
++/*
++ * The phone sits in Recovery Mode by default. A bare button combo can't
++ * reliably drop it into DFU (that's a matter of releasing Side at the
++ * exact right instant, which a human eyeballing the screen gets wrong
++ * often). surrealra1n's script instead sends a "reboot" command over USB
++ * while Volume Down is held, so the reboot itself - not your timing - is
++ * the trigger. This replicates that: LED blinks fast while you should be
++ * holding Volume Down + Side, we send the command, then LED blinks slow
++ * for "release Side, keep holding Volume Down".
++ */
++static void trigger_dfu_from_recovery(void) {
++    INFO("Recovery Mode seen: hold Volume Down + Side NOW");
++    led_set_state(LED_STATE_RECOVERY_COUNTDOWN);
++    sleep_ms(RECOVERY_HOLD_BOTH_MS);
++
++    int ret = autoboot_send_recovery_reboot();
++    if (ret != 0) {
++        INFO("reboot command failed (%d), will retry next time Recovery is seen", ret);
++    } else {
++        INFO("reboot command sent");
++    }
++
++    sleep_ms(RECOVERY_HOLD_AFTER_MS);
++
++    INFO("release Side now, KEEP HOLDING Volume Down");
++    led_set_state(LED_STATE_RECOVERY_HOLD);
++    sleep_ms(RECOVERY_HOLD_VOLDOWN_MS);
++
++    usb_bus_reset_open_ep0();
++}
++
++/*
++ * The phone can be plugged in while off or in Recovery; wait here
++ * until it shows up in DFU mode, so a non-DFU device is not an error.
++ */
++static void wait_for_dfu(void) {
++    int shown = -1;
++    bool announced = false;
++
++    while (true) {
++        uint16_t pid = 0;
++
++        if (autoboot_read_pid(&pid) != 0) {
++            // nothing answering, keep breathing
++            if (shown != LED_STATE_IDLE) {
++                led_set_state(LED_STATE_IDLE);
++                shown = LED_STATE_IDLE;
++            }
++
++            sleep_ms(CONNECTION_FAIL_SLEEP_MS);
++            usb_bus_reset_open_ep0();
++            continue;
++        }
++
++        if (pid == APPLE_PID_DFU) {
++            break;
++        }
++
++        if (pid == APPLE_PID_RECOVERY) {
++            trigger_dfu_from_recovery();
++            shown = -1;
++            announced = false;
++            continue;
++        }
++
++        if (!announced) {
++            INFO("device PID:0x%04X is not in DFU, waiting for DFU mode...", pid);
++            announced = true;
++        }
++
++        if (shown != LED_STATE_WAIT_DFU) {
++            led_set_state(LED_STATE_WAIT_DFU);
++            shown = LED_STATE_WAIT_DFU;
++        }
++
++        sleep_ms(NOT_DFU_POLL_MS);
++        usb_bus_reset_open_ep0();
++    }
++
++    INFO("DFU device found, settling...");
++
++    if (shown != LED_STATE_IDLE) {
++        led_set_state(LED_STATE_IDLE);
++    }
++
++    sleep_ms(DFU_SETTLE_MS);
++    usb_bus_reset_open_ep0();
++}
++
+ __attribute__((noreturn))
+ void do_auto(void) {
++    bool have_image = autoboot_image_check();
++
++    wait_for_dfu();
++
+     while (true) {
+         int ret = exploit_run();
+ 
+@@ -62,8 +176,18 @@
+          * UPDATE: same behavior for already PWNED devices
+          */
+         if (ret == -2) {
++            // already PWNED (e.g. the Pico rebooted mid-boot): go boot it
++            uint16_t cpid = 0;
++            bool pwnd = false;
++
++            if (device_identify(&cpid, &pwnd) == 0 && pwnd) {
++                led_set_state(LED_STATE_SUCCESS);
++                break;
++            }
++
+             sleep_ms(CONNECTION_FAIL_SLEEP_MS);
+             usb_bus_reset_open_ep0();
++            wait_for_dfu();
+             continue;
+         }
+ 
+@@ -76,20 +200,21 @@
+         break;
+     }
+ 
+-#if WITH_AUTO_REBOOT
+-    printf("\nsuccess, rebooting in %d seconds\n", SUCCESS_REBOOT_DELAY_SEC);
++    if (!have_image) {
++        printf("\nsuccess (no boot image), spinning forever\n");
++        spin_forever();
++    }
+ 
+-    sleep_ms(SUCCESS_REBOOT_DELAY_SEC * 1000);
++    led_set_state(LED_STATE_RUNNING);
+ 
+-    watchdog_reboot(0, SRAM_END, 1);
+-    while (1) {}
+-#else
+-    printf("\nsuccess, spinning forever\n");
+-
+-    while (1) {
+-        sleep_ms(100);
++    if (autoboot_boot() != 0) {
++        fatal_failure();
+     }
+-#endif
++
++    led_set_state(LED_STATE_SUCCESS);
++
++    printf("\nsuccess, spinning forever\n");
++    spin_forever();
+ }
+ 
+ #else

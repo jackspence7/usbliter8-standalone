@@ -1,0 +1,94 @@
+--- a/led.c
++++ b/led.c
+@@ -113,6 +113,7 @@
+     bool blink_curr_state;
+ 
+     repeating_timer_t breathing_timer;
++    bool breathing_en;
+     uint breathing_level;
+     bool breathing_falling;
+ } led_ctx = { 0 };
+@@ -177,6 +178,10 @@
+ }
+ 
+ void led_set_breathing(bool on) {
++    if (on == led_ctx.breathing_en) {
++        return;
++    }
++
+     if (on) {
+         led_set_blinking(0);
+         add_repeating_timer_ms(2, _led_breathing_timer_cb, NULL, &led_ctx.breathing_timer);
+@@ -184,6 +189,8 @@
+         cancel_repeating_timer(&led_ctx.breathing_timer);
+         led_toggle(DISABLED);
+     }
++
++    led_ctx.breathing_en = on;
+ }
+ 
+ #endif
+@@ -262,8 +269,26 @@
+         case LED_STATE_ERROR: {
+             led_set_color(RED);
+             led_set_blinking(0);
++            break;
++        }
++
++        case LED_STATE_WAIT_DFU: {
++            led_set_color(AMBER);
++            led_set_blinking(500);
+             break;
+         }
++
++        case LED_STATE_RECOVERY_COUNTDOWN: {
++            led_set_color(AMBER);
++            led_set_blinking(100);
++            break;
++        }
++
++        case LED_STATE_RECOVERY_HOLD: {
++            led_set_color(BLUE);
++            led_set_blinking(1000);
++            break;
++        }
+     }
+ }
+ 
+@@ -288,16 +313,36 @@
+         }
+ 
+         case LED_STATE_SUCCESS: {
++            led_set_breathing(false);
+             led_set_blinking(0);
+             led_toggle(ENABLED);
+             break;
+         }
+ 
+         case LED_STATE_ERROR: {
++            led_set_breathing(false);
+             led_set_blinking(0);
+             led_toggle(DISABLED);
+             break;
+         }
++
++        case LED_STATE_WAIT_DFU: {
++            led_set_breathing(false);
++            led_set_blinking(500);
++            break;
++        }
++
++        case LED_STATE_RECOVERY_COUNTDOWN: {
++            led_set_breathing(false);
++            led_set_blinking(100);
++            break;
++        }
++
++        case LED_STATE_RECOVERY_HOLD: {
++            led_set_breathing(false);
++            led_set_blinking(1000);
++            break;
++        }
+     }
+ }
+ 

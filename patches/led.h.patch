@@ -1,0 +1,18 @@
+--- a/led.h
++++ b/led.h
+@@ -7,7 +7,14 @@
+     LED_STATE_IDLE,
+     LED_STATE_RUNNING,
+     LED_STATE_SUCCESS,
+-    LED_STATE_ERROR
++    LED_STATE_ERROR,
++    LED_STATE_WAIT_DFU,
++
++    // Recovery Mode seen: fast blink = "hold Volume Down + Side now",
++    // then, right after the reboot command is sent, a slower blink =
++    // "release Side, keep holding Volume Down".
++    LED_STATE_RECOVERY_COUNTDOWN,
++    LED_STATE_RECOVERY_HOLD
+ };
+ 
+ void led_set_state(int state);

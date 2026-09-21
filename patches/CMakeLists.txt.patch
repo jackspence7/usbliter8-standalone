@@ -1,0 +1,15 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -30,10 +30,11 @@
+     bus.c
+     usb.c
+     exploit.c
++    autoboot.c
+ )
+ 
+ pico_set_program_name(usbliter8 "usbliter8")
+-pico_set_program_version(usbliter8 "1.0")
++pico_set_program_version(usbliter8 "1.0-autoboot-recdfu")
+ 
+ target_compile_definitions(usbliter8 PRIVATE
+     PICO_STACK_SIZE=0x1000
